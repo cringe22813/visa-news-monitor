@@ -2,6 +2,8 @@ import requests
 import hashlib
 import os
 from bs4 import BeautifulSoup
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 TOKEN = os.getenv("TELEGRAM_TOKEN")
