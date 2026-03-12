@@ -17,6 +17,9 @@ def get_page_content():
             viewport={"width": 1280, "height": 800},
             locale="ru-RU",
             timezone_id="Europe/Minsk"
+            java_script_enabled=True,
+            bypass_csp=True,
+            ignore_https_errors=True,
         )
         page = context.new_page()
         
@@ -26,7 +29,15 @@ def get_page_content():
             Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
         """)
         
-        page.goto(URL, wait_until="networkidle", timeout=45000)
+        page.goto(URL, wait_until="domcontentloaded", timeout=90000)
+
+        try:
+            page.wait_for_selector('body > div#challenge-form, div#cf-wrapper, [data-sitekey]', timeout=60000)
+            print("Cloudflare challenge detected, waiting extra...")
+            page.wait_for_timeout(15000)  # пауза 15 сек
+            page.wait_for_load_state("networkidle", timeout=60000)
+        except:
+            print("No visible challenge or already passed")
         
         # Если Cloudflare показывает челлендж — ждём до 30 сек
         try:
