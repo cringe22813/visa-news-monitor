@@ -16,7 +16,7 @@ def get_page_content():
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
             locale="ru-RU",
-            timezone_id="Europe/Minsk"
+            timezone_id="Europe/Minsk",
             java_script_enabled=True,
             bypass_csp=True,
             ignore_https_errors=True,
