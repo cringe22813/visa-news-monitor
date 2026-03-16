@@ -8,6 +8,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install requests beautifulsoup4 playwright
-          playwright install --with-deps chromium  # ставит браузер + зависимости
+          playwright install --with-deps chromium
 
       - name: Run monitor
         env:
@@ -27,10 +28,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
 
-      - name: Commit new hash if changed
+      - name: Commit hash
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
           git add last_hash.txt
-          git diff --quiet last_hash.txt || (git commit -m "Update hash" && git push)
-        continue-on-error: true
+          git diff --quiet || (git commit -m "update hash" && git push)
