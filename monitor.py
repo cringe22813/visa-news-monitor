@@ -29,8 +29,8 @@ def get_latest_news():
 
         page.goto(URL, wait_until="domcontentloaded", timeout=90000)
 
-        # ждём появления новостей
-        page.wait_for_selector("a[href*='/news/']", timeout=60000)
+        # ждём пока Cloudflare / JS прогрузятся
+        page.wait_for_timeout(15000)
 
         html = page.content()
 
@@ -38,21 +38,27 @@ def get_latest_news():
 
     soup = BeautifulSoup(html, "html.parser")
 
-    news_links = soup.select("a[href*='/news/']")
+    news_cards = soup.select("article")
 
-    if not news_links:
+    if not news_cards:
         print("Новости не найдены")
         return None
 
-    first = news_links[0]
+    first = news_cards[0]
 
     title = first.get_text(strip=True)
-    link = first.get("href")
 
-    if link.startswith("/"):
-        link = "https://visas-it.tlscontact.com" + link
+    link_tag = first.find("a")
+
+    if link_tag:
+        link = link_tag.get("href")
+        if link.startswith("/"):
+            link = "https://visas-it.tlscontact.com" + link
+    else:
+        link = URL
 
     return f"{title}\n{link}"
+
 
 
 
@@ -72,8 +78,12 @@ def send_telegram(message):
 def main():
     news = get_latest_news()
 
-    if not news:
-        return
+    news = get_latest_news()
+
+if not news:
+    print("Не удалось получить новости")
+    return
+
 
     current_hash = hashlib.md5(news.encode()).hexdigest()
 
