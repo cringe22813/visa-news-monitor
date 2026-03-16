@@ -29,7 +29,8 @@ def get_latest_news():
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
         """)
 
-        page.goto(URL, wait_until="networkidle", timeout=90000)
+        page.goto(URL, wait_until="domcontentloaded", timeout=90000)
+        page.wait_for_timeout(8000)
 
         page.wait_for_timeout(5000)
 
