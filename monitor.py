@@ -1,8 +1,9 @@
 import hashlib
 import os
 import requests
+from playwright.sync_api import sync_playwright
 
-URL = "https://visas-it.tlscontact.com/services/customerservice/api/v1/news"
+URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -12,32 +13,45 @@ HASH_FILE = "last_hash.txt"
 
 def get_latest_news():
 
-    params = {
-        "country": "by",
-        "vac": "byMSQ2it",
-        "locale": "ru-ru"
-    }
+    api_response = None
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news",
-        "Origin": "https://visas-it.tlscontact.com"
-    }
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
 
-    r = requests.get(URL, params=params, headers=headers, timeout=30)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            locale="ru-RU",
+            timezone_id="Europe/Minsk",
+        )
 
-    if r.status_code != 200:
-        print("Ошибка API:", r.status_code)
+        page = context.new_page()
+
+        # перехватываем ответ API
+        def handle_response(response):
+            nonlocal api_response
+            if "news" in response.url and "customerservice" in response.url:
+                try:
+                    api_response = response.json()
+                except:
+                    pass
+
+        page.on("response", handle_response)
+
+        page.goto(URL, wait_until="domcontentloaded", timeout=90000)
+
+        # ждём пока сайт сделает API запрос
+        page.wait_for_timeout(10000)
+
+        browser.close()
+
+    if not api_response:
+        print("API новости не получены")
         return None
 
-    data = r.json()
-
-    if not data:
-        print("Новости не найдены")
-        return None
-
-    first = data[0]
+    first = api_response[0]
 
     title = first["title"]
     link = "https://visas-it.tlscontact.com" + first["url"]
