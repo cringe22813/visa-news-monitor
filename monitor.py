@@ -1,7 +1,9 @@
 import hashlib
 import os
+import time
 import requests
 from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
@@ -11,52 +13,57 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 HASH_FILE = "last_hash.txt"
 
 
-def get_latest_news():
-
-    api_response = None
-
+def fetch_page_html():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage"
+            ],
         )
 
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36",
             locale="ru-RU",
             timezone_id="Europe/Minsk",
+            viewport={"width": 1280, "height": 900},
         )
 
         page = context.new_page()
 
-        # перехватываем ответ API
-        def handle_response(response):
-            nonlocal api_response
-            if "news" in response.url and "customerservice" in response.url:
-                try:
-                    api_response = response.json()
-                except:
-                    pass
+        page.goto(URL, wait_until="domcontentloaded", timeout=120000)
 
-        page.on("response", handle_response)
+        # даём Cloudflare / React полностью прогрузиться
+        page.wait_for_timeout(20000)
 
-        page.goto(URL, wait_until="domcontentloaded", timeout=90000)
-
-        # ждём пока сайт сделает API запрос
-        page.wait_for_timeout(10000)
+        html = page.content()
 
         browser.close()
 
-    if not api_response:
-        print("API новости не получены")
-        return None
+        return html
 
-    first = api_response[0]
 
-    title = first["title"]
-    link = "https://visas-it.tlscontact.com" + first["url"]
+def get_latest_news():
 
-    return f"{title}\n{link}"
+    # пробуем несколько раз (иногда первая загрузка — Cloudflare)
+    for attempt in range(3):
+
+        html = fetch_page_html()
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # берём текст блока новостей
+        text = soup.get_text("\n", strip=True)
+
+        if "News" in text or "Новости" in text:
+            return text[:500]  # достаточно для hash
+
+        print("Попытка", attempt + 1, "— новости не найдены, пробуем снова")
+        time.sleep(10)
+
+    return None
 
 
 def send_telegram(message):
@@ -89,9 +96,9 @@ def main():
             print("Новой новости нет")
             return
 
-    print("Новая новость!")
+    print("Обнаружено изменение новостей")
 
-    send_telegram(f"🆕 Новая новость TLS\n\n{news}")
+    send_telegram(f"🆕 Обновление новостей TLS\n\n{URL}")
 
     with open(HASH_FILE, "w") as f:
         f.write(current_hash)
