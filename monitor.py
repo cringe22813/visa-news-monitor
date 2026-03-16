@@ -14,25 +14,23 @@ HASH_FILE = "last_hash.txt"
 
 def get_latest_news():
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
 
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             locale="ru-RU",
             timezone_id="Europe/Minsk",
         )
 
         page = context.new_page()
 
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        """)
-
         page.goto(URL, wait_until="domcontentloaded", timeout=90000)
-        page.wait_for_timeout(8000)
 
-        page.wait_for_timeout(5000)
+        # ждём появления новостей
+        page.wait_for_selector("a[href*='/news/']", timeout=60000)
 
         html = page.content()
 
@@ -46,15 +44,16 @@ def get_latest_news():
         print("Новости не найдены")
         return None
 
-    first_news = news_links[0]
+    first = news_links[0]
 
-    title = first_news.get_text(strip=True)
-    link = first_news.get("href")
+    title = first.get_text(strip=True)
+    link = first.get("href")
 
     if link.startswith("/"):
         link = "https://visas-it.tlscontact.com" + link
 
     return f"{title}\n{link}"
+
 
 
 def send_telegram(message):
