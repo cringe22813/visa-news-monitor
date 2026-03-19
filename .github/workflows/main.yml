@@ -41,3 +41,12 @@ jobs:
           git commit -m "update hash" || echo "No changes"
 
           git push
+
+          - name: Commit last_news
+          run: |
+          git config --global user.name "bot"
+          git config --global user.email "bot@example.com"
+          git add last_news.txt
+          git commit -m "update last news" || echo "no changes"
+          git push
+
