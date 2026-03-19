@@ -36,8 +36,8 @@ def get_latest_news():
 
 def send_telegram(text):
     requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        data={"chat_id": CHAT_ID, "text": text}
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        data={"chat_id": TELEGRAM_CHAT_ID, "text": text}
     )
 
 
