@@ -1,87 +1,54 @@
-import hashlib
-import os
 import requests
-from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
+import os
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+CHAT_ID = os.environ["CHAT_ID"]
 
-HASH_FILE = "last_hash.txt"
+def get_latest_news():
+    r = requests.get(URL)
+    soup = BeautifulSoup(r.text, "html.parser")
 
+    news = soup.select_one("a")  # ⚠️ заменим ниже на точный селектор
 
-def get_news_text():
+    if news:
+        title = news.text.strip()
+        link = news.get("href")
+        return title, link
 
-    with sync_playwright() as p:
-
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled"
-            ]
-        )
-
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-            locale="ru-RU"
-        )
-
-        page = context.new_page()
-
-        page.goto(URL, wait_until="domcontentloaded", timeout=120000)
-
-        # ждём рендер React
-        page.wait_for_timeout(20000)
-
-        text = page.inner_text("body")
-
-        browser.close()
-
-        return text
+    return None, None
 
 
-def send_telegram(message):
-
+def send_telegram(text):
     requests.post(
-        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-        data={
-            "chat_id": CHAT_ID,
-            "text": message
-        }
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+        data={"chat_id": CHAT_ID, "text": text}
     )
 
 
+def load_last():
+    if os.path.exists("last_news.txt"):
+        with open("last_news.txt", "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return None
+
+
+def save_last(title):
+    with open("last_news.txt", "w", encoding="utf-8") as f:
+        f.write(title)
+
+
 def main():
+    title, link = get_latest_news()
+    last = load_last()
 
-    news_text = get_news_text()
-
-    if not news_text:
-        print("Новости не получены")
-        return
-
-    # берём только часть текста страницы
-    news_text = news_text[:2000]
-
-    current_hash = hashlib.md5(news_text.encode()).hexdigest()
-
-    if os.path.exists(HASH_FILE):
-
-        with open(HASH_FILE) as f:
-            last_hash = f.read().strip()
-
-        if current_hash == last_hash:
-            print("Новой новости нет")
-            return
-
-    print("Новости изменились")
-
-    send_telegram("🆕 На странице новостей TLS есть изменения\n\n" + URL)
-
-    with open(HASH_FILE, "w") as f:
-        f.write(current_hash)
+    if title and title != last:
+        send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
+        save_last(title)
+    else:
+        print("Новых новостей нет")
 
 
 if __name__ == "__main__":
