@@ -12,35 +12,37 @@ def get_latest_news():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-
-            page.goto(URL, timeout=60000)
-            page.wait_for_load_state("networkidle")
-
-            # ждём появление новостей
-            page.wait_for_selector("a[href*='/news/']", timeout=15000)
-
-            links = page.query_selector_all("a[href*='/news/']")
-
+            page.goto(URL, timeout=90000)  # увеличил таймаут
+            page.wait_for_load_state("networkidle", timeout=45000)
+            
+            # Ждём именно блок новостей (подставь реальный селектор после проверки!)
+            # Варианты, которые часто работают на TLScontact:
+            # page.wait_for_selector(".news-list, .announcements, .vac-news, section.news, div[id*='news']", timeout=30000)
+            page.wait_for_selector("div[class*='news'], ul[class*='news'], li a[href*='/news/']", timeout=30000)
+            
+            # Берём все ссылки **только внутри блока новостей**
+            news_container = page.query_selector("div[class*='news'], section.news, .announcements, ul.news-list")  # подставь свой
+            if not news_container:
+                print("Блок новостей не найден")
+                return None, None
+            
+            links = news_container.query_selector_all("a[href*='/news/']")
             if not links:
-                print("Не нашли новости")
+                print("Ссылок на новости внутри блока нет")
                 return None, None
-
-            first = links[0]
-
-            title = first.inner_text().strip()
-            link = first.get_attribute("href")
-
-            if not link:
+            
+            first_news = links[0]
+            title = first_news.inner_text().strip()
+            href = first_news.get_attribute("href")
+            if not href:
                 return None, None
-
-            if link.startswith("/"):
-                link = "https://visas-it.tlscontact.com" + link
-
+            
+            link = href if href.startswith("http") else "https://visas-it.tlscontact.com" + href
+            
             browser.close()
             return title, link
-
     except Exception as e:
-        print("Ошибка:", e)
+        print("Ошибка загрузки:", str(e))
         return None, None
 
 
