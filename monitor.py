@@ -7,18 +7,31 @@ URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
+
 def get_latest_news():
-    r = requests.get(URL)
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    r = requests.get(URL, headers=headers, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    news = soup.select_one("a")  # ⚠️ заменим ниже на точный селектор
+    # 🔥 самый стабильный вариант
+    first_news = soup.select_one("h2")
 
-    if news:
-        title = news.text.strip()
-        link = news.get("href")
-        return title, link
+    if not first_news:
+        return None, None
 
-    return None, None
+    title = first_news.get_text(strip=True)
+
+    # ссылка "Read more"
+    read_more = first_news.find_next("a")
+    link = read_more["href"] if read_more else URL
+
+    if link and not link.startswith("http"):
+        link = "https://visas-it.tlscontact.com" + link
+
+    return title, link
 
 
 def send_telegram(text):
@@ -29,10 +42,11 @@ def send_telegram(text):
 
 
 def load_last():
-    if os.path.exists("last_news.txt"):
+    try:
         with open("last_news.txt", "r", encoding="utf-8") as f:
             return f.read().strip()
-    return None
+    except:
+        return None
 
 
 def save_last(title):
@@ -43,6 +57,9 @@ def save_last(title):
 def main():
     title, link = get_latest_news()
     last = load_last()
+
+    print("Текущая новость:", title)
+    print("Старая новость:", last)
 
     if title and title != last:
         send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
