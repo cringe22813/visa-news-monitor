@@ -14,7 +14,10 @@ def get_latest_news():
             page = browser.new_page()
 
             page.goto(URL, timeout=60000)
-            page.wait_for_timeout(5000)  # дать странице загрузиться
+            page.wait_for_load_state("networkidle")
+
+            # ждём появление новостей
+            page.wait_for_selector("a[href*='/news/']", timeout=15000)
 
             links = page.query_selector_all("a[href*='/news/']")
 
@@ -23,8 +26,12 @@ def get_latest_news():
                 return None, None
 
             first = links[0]
+
             title = first.inner_text().strip()
             link = first.get_attribute("href")
+
+            if not link:
+                return None, None
 
             if link.startswith("/"):
                 link = "https://visas-it.tlscontact.com" + link
