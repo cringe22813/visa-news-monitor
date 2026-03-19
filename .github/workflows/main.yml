@@ -36,7 +36,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
 
-      - name: Commit state
+      - name: Commit last_news
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
@@ -44,19 +44,19 @@ jobs:
           git add last_news.txt
       
           if git diff --cached --quiet; then
-            echo "no changes"
+            echo "No changes to commit"
             exit 0
           fi
       
-          git commit -m "update last news"
+          git commit -m "Update last news"
       
-          # ВАЖНО: тянем и ребейзим ПЕРЕД пушем
+          # Сначала подтягиваем удалённые изменения и делаем ребейз
           git pull --rebase origin main || true
       
-          # Повторяем push если не получилось
+          # Пытаемся пушить с retry на случай конфликтов
           for i in {1..3}; do
             git push && break
-            echo "Retry push..."
-            sleep 3
+            echo "Push failed, retrying..."
             git pull --rebase origin main || true
+            sleep 3
           done
