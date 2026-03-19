@@ -2,51 +2,38 @@ name: Visa News Monitor
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: "*/5 * * * *"  # каждые 5 минут
   workflow_dispatch:
 
 jobs:
   check:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull latest changes
+        run: git pull
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4 playwright
-          playwright install --with-deps chromium
+        run: pip install requests beautifulsoup4
 
-      - name: Run monitor
+      - name: Run script
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python monitor.py
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python check_news.py
 
-      - name: Commit hash
+      - name: Commit state
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git add last_hash.txt
-
-          git commit -m "update hash" || echo "No changes"
-
-          git push
-
-          - name: Commit last_news
-          run: |
           git config --global user.name "bot"
           git config --global user.email "bot@example.com"
           git add last_news.txt
           git commit -m "update last news" || echo "no changes"
           git push
-
