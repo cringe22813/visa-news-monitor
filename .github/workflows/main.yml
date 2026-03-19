@@ -32,8 +32,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
           git add last_news.txt
-          git commit -m "update last news" || echo "no changes"
-          git push
+          git diff --quiet && echo "no changes" || (
+            git commit -m "update last news"
+            git push
+          )
 permissions:
   contents: write
 
