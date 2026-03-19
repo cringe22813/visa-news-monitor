@@ -28,7 +28,7 @@ jobs:
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python check_news.py
+        run: python monitor.py
 
       - name: Commit state
         run: |
