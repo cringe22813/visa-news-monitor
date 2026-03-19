@@ -22,7 +22,8 @@ def get_latest_news():
     if not first_news:
         return None, None
 
-    title = first_news.get_text(strip=True)
+    title = " ".join(first_news.get_text().split())
+
 
     # ссылка "Read more"
     read_more = first_news.find_next("a")
