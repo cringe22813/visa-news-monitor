@@ -2,7 +2,7 @@ name: Visa News Monitor
 
 on:
   schedule:
-    - cron: "*/10 * * * *" 
+    - cron: "0 * * * *"   # раз в час
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests beautifulsoup4
+          pip install playwright requests
+          playwright install chromium
 
       - name: Run script
         env:
@@ -31,13 +32,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
 
-      - name: Commit last_news if changed
+      - name: Commit if changed
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
 
           git pull --rebase origin main || true
+
           git add last_news.txt
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git diff --cached --quiet && echo "No changes" && exit 0
+
           git commit -m "Update last news [ci skip]"
           git push origin main
