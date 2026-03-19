@@ -41,41 +41,50 @@ for attempt in range(1, 4):
 def get_latest_news():
     try:
         with sync_playwright() as p:
+            # 1. Сначала запускаем браузер
             browser = p.chromium.launch(headless=True)
+            
+            # 2. Создаём контекст
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 900},
                 locale="ru-RU",
             )
+            
+            # 3. Создаём страницу
             page = context.new_page()
             
-            # Увеличиваем таймауты, т.к. Cloudflare иногда тормозит
+            # 4. Загрузка страницы
             page.goto(URL, wait_until="domcontentloaded", timeout=90000)
             page.wait_for_load_state("networkidle", timeout=60000)
             
-            # Ждём именно контейнер новостей по id — это самый стабильный вариант
-            page.wait_for_selector("#news-list-wrapper", timeout=60000)
-            print("Статус после загрузки:", page.url)
+            # Отладка: что реально загрузилось
+            print("URL после загрузки:", page.url)
             print("Заголовок страницы:", page.title())
-            html_snippet = page.content()[:1500]  # первые 1500 символов
-            print("HTML начало:", html_snippet)
-
-            if "Cloudflare" in html_snippet or "Attention Required" in html_snippet:
-                print("Обнаружен Cloudflare блок — вероятно 403/challenge")
-                print("Контейнер #news-list-wrapper найден")
+            html_start = page.content()[:1200]
+            print("HTML начало (первые 1200 символов):", html_start)
             
-            # Берём все <a> внутри этого контейнера, которые ведут на /news/...
-            news_links = page.query_selector_all('#news-list-wrapper a[href*="/news/"]')
-            
-            if not news_links:
-                print("Ссылок на новости внутри #news-list-wrapper не найдено")
+            if "Cloudflare" in html_start or "Attention Required" in html_start:
+                print("→ Cloudflare защита активирована (403/challenge)")
                 browser.close()
                 return None, None
             
-            # Берём первую реальную новость (обычно самая свежая сверху)
+            # 5. Ждём контейнер новостей
+            page.wait_for_selector("#news-list-wrapper", timeout=60000)
+            print("Контейнер #news-list-wrapper найден")
+            
+            # 6. Ищем ссылки внутри контейнера
+            news_links = page.query_selector_all('#news-list-wrapper a[href*="/news/"]')
+            
+            if not news_links:
+                print("Ссылок внутри #news-list-wrapper не найдено")
+                browser.close()
+                return None, None
+            
+            # Берём первую (самую свежую)
             first_link = news_links[0]
-            title_element = first_link.query_selector('h2[data-testid="title"]')  # или просто first_link.inner_text() если нужно грубо
-            title = title_element.inner_text().strip() if title_element else first_link.inner_text().strip()
+            title_elem = first_link.query_selector('h2[data-testid="title"]')
+            title = title_elem.inner_text().strip() if title_elem else first_link.inner_text().strip()
             
             href = first_link.get_attribute("href")
             link = "https://visas-it.tlscontact.com" + href if href.startswith("/") else href
@@ -84,7 +93,7 @@ def get_latest_news():
             return title, link
             
     except Exception as e:
-        print("Ошибка загрузки:", str(e))
+        print("Ошибка загрузки страницы или парсинга:", str(e))
         return None, None
 
 def send_telegram(text):
