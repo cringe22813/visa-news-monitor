@@ -6,8 +6,8 @@ import time
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
+TELEGRAM_TOKEN = os.environ["BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["CHAT_ID"]
 
 
 def fetch_page():
@@ -68,8 +68,8 @@ def get_latest_news():
 def send_telegram(text):
     try:
         requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": text},
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
             timeout=10
         )
     except Exception as e:
