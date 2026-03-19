@@ -1,6 +1,7 @@
 import os
 import requests
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -14,7 +15,6 @@ def get_latest_news():
             browser = p.chromium.launch(
                 headless=True,
                 args=[
-                    "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                 ]
@@ -22,66 +22,47 @@ def get_latest_news():
 
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                locale="ru-RU",
-                timezone_id="Europe/Minsk",
-                viewport={"width": 1280, "height": 800},
+                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
 
             page = context.new_page()
 
-            # убираем webdriver
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            """)
-
             print("Открываем страницу...")
-
             page.goto(URL, wait_until="domcontentloaded", timeout=60000)
 
-            # 🔥 ВАЖНО: ждём Cloudflare
-            page.wait_for_timeout(15000)
+            # просто ждём рендер
+            page.wait_for_timeout(10000)
 
             html = page.content()
-
-            if "Just a moment" in html or "Attention Required" in html:
-                print("Cloudflare не пропустил")
-                browser.close()
-                return None, None
-
-            page.wait_for_selector('#news-list-wrapper', timeout=60000)
-
-            links = page.query_selector_all('#news-list-wrapper a[href*="/news/"]')
-
-            if not links:
-                print("Новости не найдены")
-                browser.close()
-                return None, None
-
-            first = links[0]
-
-            title_el = first.query_selector('h2[data-testid="title"]')
-            title = title_el.inner_text().strip() if title_el else first.inner_text().strip()
-
-            href = first.get_attribute("href")
-            link = "https://visas-it.tlscontact.com" + href if href.startswith("/") else href
-
             browser.close()
-            return title, link
 
-    except PlaywrightTimeout:
-        print("Таймаут Playwright")
-        return None, None
+        # 👉 ПАРСИМ HTML (НЕ через Playwright)
+        soup = BeautifulSoup(html, "html.parser")
+
+        container = soup.select_one("#news-list-wrapper")
+        if not container:
+            print("Контейнер не найден")
+            return None, None
+
+        first = container.select_one('a[href*="/news/"]')
+        if not first:
+            print("Новость не найдена")
+            return None, None
+
+        title_el = first.select_one('h2[data-testid="title"]')
+        title = title_el.get_text(strip=True) if title_el else first.get_text(strip=True)
+
+        href = first.get("href")
+        link = "https://visas-it.tlscontact.com" + href if href.startswith("/") else href
+
+        return title, link
+
     except Exception as e:
         print("Ошибка:", e)
         return None, None
 
 
 def send_telegram(text):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Нет Telegram токена")
-        return
-
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
