@@ -36,27 +36,22 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
 
-      - name: Commit last_news
+      - name: Commit last_news if changed
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
-      
+          
           git add last_news.txt
-      
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-      
-          git commit -m "Update last news"
-      
-          # Сначала подтягиваем удалённые изменения и делаем ребейз
-          git pull --rebase origin main || true
-      
-          # Пытаемся пушить с retry на случай конфликтов
-          for i in {1..3}; do
-            git push && break
-            echo "Push failed, retrying..."
+          
+          # Проверяем, есть ли изменения
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          
+          git commit -m "Update last news [ci skip]"
+          
+          # Force pull + rebase + push с retry
+          for attempt in {1..5}; do
             git pull --rebase origin main || true
-            sleep 3
-          done
+            git push origin main && break
+            echo "Push attempt $attempt failed, retrying in 5s..."
+            sleep 5
+          done || { echo "All push attempts failed"; exit 1; }
