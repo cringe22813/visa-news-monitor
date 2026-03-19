@@ -4,8 +4,8 @@ import os
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+TELEGRAM_TOKEN = os.environ["BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["CHAT_ID"]
 
 
 def get_latest_news():
