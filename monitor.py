@@ -9,10 +9,10 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 def get_latest_news():
     try:
         with sync_playwright() as p:
-            # Запускаем браузер
+            # Запуск браузера
             browser = p.chromium.launch(headless=True)
 
-            # Создаём контекст со stealth
+            # Контекст со stealth
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 900},
@@ -24,39 +24,39 @@ def get_latest_news():
 
             page = context.new_page()
 
-            # Stealth-скрипты
+            # Stealth скрипты
             page.add_init_script("""
                 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
                 Object.defineProperty(navigator, 'languages', {get: () => ['ru-RU', 'ru', 'en-US']});
                 Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
             """)
 
-            # Retry-цикл загрузки страницы
+            # Retry загрузки
             loaded = False
             for attempt in range(1, 4):
                 try:
                     page.goto(URL, wait_until="domcontentloaded", timeout=90000)
                     page.wait_for_load_state("networkidle", timeout=60000)
-                    page.wait_for_timeout(10000)  # +10 сек паузы после загрузки
-                    print(f"Попытка {attempt} — страница загружена успешно")
+                    page.wait_for_timeout(10000)  # пауза 10 сек
+                    print(f"Попытка {attempt} — страница загружена")
                     loaded = True
                     break
                 except PlaywrightTimeout:
                     print(f"Таймаут на попытке {attempt}, повтор...")
                     if attempt == 3:
-                        raise
+                        raise Exception("Все попытки загрузки страницы провалились")
 
             if not loaded:
-                raise Exception("Не удалось загрузить страницу после 3 попыток")
+                raise Exception("Страница не загрузилась")
 
             # Отладка
             print("URL после загрузки:", page.url)
             print("Заголовок страницы:", page.title())
-            html_start = page.content()[:1200]
-            print("HTML начало (первые 1200 символов):", html_start)
+            html_start = page.content()[:1500]
+            print("HTML начало:", html_start)
 
             if "Cloudflare" in html_start or "Attention Required" in html_start:
-                print("→ Cloudflare защита активирована (403/challenge)")
+                print("→ Обнаружен Cloudflare (403/challenge)")
                 browser.close()
                 return None, None
 
@@ -64,7 +64,7 @@ def get_latest_news():
             page.wait_for_selector("#news-list-wrapper", timeout=60000)
             print("Контейнер #news-list-wrapper найден")
 
-            # Ищем ссылки внутри контейнера
+            # Ссылки внутри контейнера
             news_links = page.query_selector_all('#news-list-wrapper a[href*="/news/"]')
 
             if not news_links:
@@ -72,7 +72,6 @@ def get_latest_news():
                 browser.close()
                 return None, None
 
-            # Берём первую новость
             first_link = news_links[0]
             title_elem = first_link.query_selector('h2[data-testid="title"]')
             title = title_elem.inner_text().strip() if title_elem else first_link.inner_text().strip()
