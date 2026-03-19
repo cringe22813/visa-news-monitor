@@ -1,6 +1,5 @@
 import os
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
@@ -8,33 +7,30 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-}
-
-
 def get_latest_news():
     try:
-        r = requests.get(URL, headers=HEADERS, timeout=20)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-        if r.status_code != 200:
-            print("Плохой статус:", r.status_code)
-            return None, None
+            page.goto(URL, timeout=60000)
+            page.wait_for_timeout(5000)  # дать странице загрузиться
 
-        soup = BeautifulSoup(r.text, "html.parser")
+            links = page.query_selector_all("a[href*='/news/']")
 
-        # ИЩЕМ ПЕРВУЮ НОВОСТЬ
-        item = soup.select_one("a[href*='/news/']")
+            if not links:
+                print("Не нашли новости")
+                return None, None
 
-        if not item:
-            print("Не нашли новость")
-            return None, None
+            first = links[0]
+            title = first.inner_text().strip()
+            link = first.get_attribute("href")
 
-        title = item.get_text(strip=True)
-        link = "https://visas-it.tlscontact.com" + item["href"]
+            if link.startswith("/"):
+                link = "https://visas-it.tlscontact.com" + link
 
-        return title, link
+            browser.close()
+            return title, link
 
     except Exception as e:
         print("Ошибка:", e)
@@ -42,13 +38,11 @@ def get_latest_news():
 
 
 def send_telegram(text):
+    import requests
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": text
-            },
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
             timeout=10
         )
     except Exception as e:
