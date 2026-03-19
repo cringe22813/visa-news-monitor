@@ -1,51 +1,49 @@
 import os
-import cloudscraper
+import requests
+from bs4 import BeautifulSoup
 
-API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date&limit=1"
-BASE_LINK = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
+URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+}
+
+
 def get_latest_news():
     try:
-        scraper = cloudscraper.create_scraper()
-
-        r = scraper.get(API_URL, timeout=20)
+        r = requests.get(URL, headers=HEADERS, timeout=20)
 
         if r.status_code != 200:
             print("Плохой статус:", r.status_code)
-            return None, None, None
+            return None, None
 
-        data = r.json()
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        if "data" not in data or not data["data"]:
-            print("Нет data:", data)
-            return None, None, None
+        # ИЩЕМ ПЕРВУЮ НОВОСТЬ
+        item = soup.select_one("a[href*='/news/']")
 
-        item = data["data"][0]
+        if not item:
+            print("Не нашли новость")
+            return None, None
 
-        title = item.get("title")
-        news_id = str(item.get("id"))
+        title = item.get_text(strip=True)
+        link = "https://visas-it.tlscontact.com" + item["href"]
 
-        if not title or not news_id:
-            return None, None, None
-
-        link = f"{BASE_LINK}/{news_id}"
-
-        return title, link, news_id
+        return title, link
 
     except Exception as e:
         print("Ошибка:", e)
-        return None, None, None
+        return None, None
 
 
 def send_telegram(text):
     try:
-        scraper = cloudscraper.create_scraper()
-
-        scraper.post(
+        requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             data={
                 "chat_id": TELEGRAM_CHAT_ID,
@@ -65,26 +63,26 @@ def load_last():
         return None
 
 
-def save_last(news_id):
+def save_last(link):
     with open("last_news.txt", "w") as f:
-        f.write(news_id)
+        f.write(link)
 
 
 def main():
-    title, link, news_id = get_latest_news()
-    last_id = load_last()
+    title, link = get_latest_news()
+    last = load_last()
 
-    print("Текущий ID:", news_id)
-    print("Старый ID:", last_id)
+    print("Текущая:", link)
+    print("Старая:", last)
 
-    if not news_id:
-        print("Не получили новость — пропускаем")
+    if not link:
+        print("Нет данных")
         return
 
-    if news_id != last_id:
+    if link != last:
         print("🔥 Новая новость!")
         send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
-        save_last(news_id)
+        save_last(link)
     else:
         print("Нет изменений")
 
