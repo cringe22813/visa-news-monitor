@@ -1,5 +1,5 @@
-import requests
 import os
+import cloudscraper
 
 API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date&limit=1"
 BASE_LINK = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
@@ -10,12 +10,9 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def get_latest_news():
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json"
-        }
+        scraper = cloudscraper.create_scraper()
 
-        r = requests.get(API_URL, headers=headers, timeout=15)
+        r = scraper.get(API_URL, timeout=20)
 
         if r.status_code != 200:
             print("Плохой статус:", r.status_code)
@@ -23,9 +20,8 @@ def get_latest_news():
 
         data = r.json()
 
-        # 🔥 защита от кривого ответа
         if "data" not in data or not data["data"]:
-            print("Нет data в ответе:", data)
+            print("Нет data:", data)
             return None, None, None
 
         item = data["data"][0]
@@ -34,7 +30,6 @@ def get_latest_news():
         news_id = str(item.get("id"))
 
         if not title or not news_id:
-            print("Нет title/id")
             return None, None, None
 
         link = f"{BASE_LINK}/{news_id}"
@@ -42,23 +37,22 @@ def get_latest_news():
         return title, link, news_id
 
     except Exception as e:
-        print("Ошибка получения новости:", e)
+        print("Ошибка:", e)
         return None, None, None
 
 
 def send_telegram(text):
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        scraper = cloudscraper.create_scraper()
 
-        requests.post(
-            url,
+        scraper.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             data={
                 "chat_id": TELEGRAM_CHAT_ID,
                 "text": text
             },
             timeout=10
         )
-
     except Exception as e:
         print("Ошибка Telegram:", e)
 
