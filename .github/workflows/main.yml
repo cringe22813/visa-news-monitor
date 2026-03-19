@@ -2,15 +2,11 @@ name: Visa News Monitor
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/10 * * * *" 
   workflow_dispatch:
 
 permissions:
   contents: write
-
-concurrency:
-  group: visa-news
-  cancel-in-progress: true
 
 jobs:
   check:
@@ -27,8 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install playwright requests
-          playwright install --with-deps
+          pip install requests beautifulsoup4
 
       - name: Run script
         env:
@@ -40,18 +35,9 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
-          
+
+          git pull --rebase origin main || true
           git add last_news.txt
-          
-          # Проверяем, есть ли изменения
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          
           git commit -m "Update last news [ci skip]"
-          
-          # Force pull + rebase + push с retry
-          for attempt in {1..5}; do
-            git pull --rebase origin main || true
-            git push origin main && break
-            echo "Push attempt $attempt failed, retrying in 5s..."
-            sleep 5
-          done || { echo "All push attempts failed"; exit 1; }
+          git push origin main
