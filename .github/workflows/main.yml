@@ -34,3 +34,7 @@ jobs:
           git add last_news.txt
           git commit -m "update last news" || echo "no changes"
           git push
+permissions:
+  contents: write
+
+        
