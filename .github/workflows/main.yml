@@ -1,10 +1,11 @@
 name: Visa News Monitor
+
 permissions:
   contents: write
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # каждые 5 минут
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -14,9 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Pull latest changes
-        run: git pull
+        with:
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -34,8 +34,8 @@ jobs:
 
       - name: Commit state
         run: |
-          git config --global user.name "bot"
-          git config --global user.email "bot@example.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions@github.com"
           git add last_news.txt
           git commit -m "update last news" || echo "no changes"
           git push
