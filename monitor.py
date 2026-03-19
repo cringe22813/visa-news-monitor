@@ -2,22 +2,40 @@ import requests
 import os
 
 API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date&limit=1"
-
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-
 BASE_LINK = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 
 def get_latest_news():
     try:
-        r = requests.get(API_URL, timeout=15)
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json"
+        }
+
+        r = requests.get(API_URL, headers=headers, timeout=15)
+
+        if r.status_code != 200:
+            print("Плохой статус:", r.status_code)
+            return None, None, None
+
         data = r.json()
+
+        # 🔥 защита от кривого ответа
+        if "data" not in data or not data["data"]:
+            print("Нет data в ответе:", data)
+            return None, None, None
 
         item = data["data"][0]
 
-        title = item["title"]
-        news_id = str(item["id"])
+        title = item.get("title")
+        news_id = str(item.get("id"))
+
+        if not title or not news_id:
+            print("Нет title/id")
+            return None, None, None
 
         link = f"{BASE_LINK}/{news_id}"
 
@@ -30,11 +48,17 @@ def get_latest_news():
 
 def send_telegram(text):
     try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
         requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
+            url,
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": text
+            },
             timeout=10
         )
+
     except Exception as e:
         print("Ошибка Telegram:", e)
 
@@ -60,11 +84,11 @@ def main():
     print("Старый ID:", last_id)
 
     if not news_id:
-        print("Не получили новость")
+        print("Не получили новость — пропускаем")
         return
 
     if news_id != last_id:
-        print("Новая новость!")
+        print("🔥 Новая новость!")
         send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
         save_last(news_id)
     else:
