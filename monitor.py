@@ -1,82 +1,81 @@
-# monitor.py
-import cloudscraper
-from bs4 import BeautifulSoup
-import json
+import requests
 import os
 
-NEWS_URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
-LAST_ID_FILE = "last_news_id.txt"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# создаем scraper, который обходит защиту Cloudflare
-scraper = cloudscraper.create_scraper()
+API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=1"
+
 
 def get_latest_news():
-    print("Открываем страницу...")
     try:
-        r = scraper.get(NEWS_URL, timeout=15)
+        print("Запрашиваем API...")
+
+        r = requests.get(API_URL, timeout=15)
         r.raise_for_status()
+
+        data = r.json()
+
+        if "data" not in data or not data["data"]:
+            print("Нет данных в API")
+            return None, None, None
+
+        item = data["data"][0]
+
+        title = item.get("title", "Без названия")
+        news_id = str(item.get("id"))
+        link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
+
+        return news_id, title, link
+
     except Exception as e:
-        print("Ошибка при получении страницы:", e)
-        return None, None
+        print("Ошибка API:", e)
+        return None, None, None
 
-    soup = BeautifulSoup(r.text, "html.parser")
 
-    # Находим все новости
-    articles = soup.find_all("article")
-    if not articles:
-        print("Не найден article")
-        return None, None
+def send_telegram(text):
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
+            timeout=10
+        )
+    except Exception as e:
+        print("Ошибка Telegram:", e)
 
-    # Берем самую свежую новость
-    latest = articles[0]
 
-    # Получаем заголовок
-    title_tag = latest.find(["h2", "h3"])
-    if title_tag:
-        title = title_tag.get_text(strip=True)
-    else:
-        title = "Без заголовка"
-
-    # Получаем ссылку, если есть
-    link_tag = latest.find("a")
-    if link_tag and link_tag.get("href"):
-        link = link_tag["href"]
-        if not link.startswith("http"):
-            link = "https://visas-it.tlscontact.com" + link
-    else:
-        link = NEWS_URL  # fallback
-
-    # Можно использовать текст заголовка как уникальный ID
-    news_id = title
-
-    return news_id, title, link
-
-def read_last_id():
-    if os.path.exists(LAST_ID_FILE):
-        with open(LAST_ID_FILE, "r", encoding="utf-8") as f:
+def load_last():
+    try:
+        with open("last_news.txt", "r") as f:
             return f.read().strip()
-    return ""
+    except:
+        return None
 
-def save_last_id(news_id):
-    with open(LAST_ID_FILE, "w", encoding="utf-8") as f:
+
+def save_last(news_id):
+    with open("last_news.txt", "w") as f:
         f.write(news_id)
+
 
 def main():
     news_id, title, link = get_latest_news()
+
+    last = load_last()
+
+    print("Текущая:", news_id)
+    print("Старая:", last)
+
     if not news_id:
         print("Нет данных")
         return
 
-    last_id = read_last_id()
-    if news_id != last_id:
-        print("Найдена новая новость!")
-        print("Заголовок:", title)
-        print("Ссылка:", link)
-        save_last_id(news_id)
+    if news_id != last:
+        print("🔥 Новая новость!")
+        send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
+        save_last(news_id)
     else:
-        print("Новых новостей нет.")
-        print("Текущая:", news_id)
-        print("Старая:", last_id)
+        print("Нет изменений")
+
 
 if __name__ == "__main__":
     main()
