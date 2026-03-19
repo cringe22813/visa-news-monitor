@@ -1,64 +1,42 @@
 import requests
-import re
 import os
 
-BASE_URL = "https://visas-it.tlscontact.com"
-PAGE_URL = f"{BASE_URL}/ru-ru/country/by/vac/byMSQ2it/news"
+API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date&limit=1"
 
-TELEGRAM_TOKEN = os.environ["BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["CHAT_ID"]
+BOT_TOKEN = os.environ["TELEGRAM_TOKEN"]
+CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-
-def get_build_id():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(PAGE_URL, headers=headers, timeout=15)
-
-    # ищем buildId в HTML
-    match = re.search(r'"buildId":"(.*?)"', r.text)
-
-    if match:
-        return match.group(1)
-
-    print("Не нашли buildId")
-    return None
+BASE_LINK = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
 
 def get_latest_news():
-    build_id = get_build_id()
-
-    if not build_id:
-        return None, None, None
-
-    json_url = f"{BASE_URL}/_next/data/{build_id}/ru-ru/country/by/vac/byMSQ2it/news.json"
-
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(json_url, headers=headers, timeout=15)
-
-    data = r.json()
-
     try:
-        news_list = data["pageProps"]["news"]
+        r = requests.get(API_URL, timeout=15)
+        data = r.json()
 
-        first = news_list[0]
+        item = data["data"][0]
 
-        title = first["title"]
-        news_id = str(first["id"])
+        title = item["title"]
+        news_id = str(item["id"])
 
-        link = f"{BASE_URL}/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
+        link = f"{BASE_LINK}/{news_id}"
 
         return title, link, news_id
 
     except Exception as e:
-        print("Ошибка парсинга JSON:", e)
+        print("Ошибка получения новости:", e)
         return None, None, None
 
 
 def send_telegram(text):
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
-        timeout=10
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": text},
+            timeout=10
+        )
+    except Exception as e:
+        print("Ошибка Telegram:", e)
 
 
 def load_last():
