@@ -32,37 +32,42 @@ def fetch_page():
 
 
 def get_latest_news():
-    html = fetch_page()
+    scraper = cloudscraper.create_scraper()
+    r = scraper.get(URL, timeout=20)
 
-    if not html:
-        print("Не удалось получить страницу")
+    if "You are unable to access" in r.text:
+        print("Cloudflare блок")
         return None, None, None
 
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    article = soup.select_one("article")
+    # 🔥 ключевой момент — берем JSON с данными
+    script = soup.find("script", id="__NEXT_DATA__")
 
-    if not article:
-        print("Нет article")
+    if not script:
+        print("Нет __NEXT_DATA__")
         return None, None, None
 
-    title_el = article.select_one('[data-testid="title"]')
-    link_el = article.select_one('a[href*="/news/"]')
+    import json
+    data = json.loads(script.string)
 
-    if not title_el or not link_el:
-        print("Не нашли title или ссылку")
+    try:
+        # 🔥 достаем список новостей
+        news_list = data["props"]["pageProps"]["news"]
+
+        first = news_list[0]
+
+        title = first["title"]
+        news_id = str(first["id"])
+        slug = first.get("slug", news_id)
+
+        link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{slug}"
+
+        return title, link, news_id
+
+    except Exception as e:
+        print("Ошибка парсинга JSON:", e)
         return None, None, None
-
-    title = " ".join(title_el.get_text().split())
-
-    link = link_el.get("href")
-    if not link.startswith("http"):
-        link = "https://visas-it.tlscontact.com" + link
-
-    # 🔥 достаём ID новости (самое важное)
-    news_id = link.split("/")[-1]
-
-    return title, link, news_id
 
 
 def send_telegram(text):
