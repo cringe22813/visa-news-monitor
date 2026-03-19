@@ -1,4 +1,6 @@
 name: Visa News Monitor
+permissions:
+  contents: write
 
 on:
   schedule:
