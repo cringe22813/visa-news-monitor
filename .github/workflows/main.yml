@@ -40,12 +40,23 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
+      
           git add last_news.txt
-
+      
           if git diff --cached --quiet; then
             echo "no changes"
-          else
-            git commit -m "update last news"
-            git pull --rebase
-            git push
+            exit 0
           fi
+      
+          git commit -m "update last news"
+      
+          # ВАЖНО: тянем и ребейзим ПЕРЕД пушем
+          git pull --rebase origin main || true
+      
+          # Повторяем push если не получилось
+          for i in {1..3}; do
+            git push && break
+            echo "Retry push..."
+            sleep 3
+            git pull --rebase origin main || true
+          done
