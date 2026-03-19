@@ -1,93 +1,82 @@
+# monitor.py
+import cloudscraper
+from bs4 import BeautifulSoup
+import json
 import os
-import requests
 
-BASE = "https://visas-it.tlscontact.com"
-NEWS_PATH = "/ru-ru/country/by/vac/byMSQ2it/news"
+NEWS_URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
+LAST_ID_FILE = "last_news_id.txt"
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-LAST_FILE = "last_news.txt"
-
-def get_json_build_id():
-    # 1. Получаем основную страницу
-    r = requests.get(BASE + NEWS_PATH, timeout=15)
-    r.raise_for_status()
-    text = r.text
-
-    # 2. Ищем buildId в HTML
-    import re
-    m = re.search(r'/_next/data/([0-9A-Za-z\-]+)/ru-ru/country/by/vac/byMSQ2it/news.json', text)
-    if not m:
-        return None
-    return m.group(1)
+# создаем scraper, который обходит защиту Cloudflare
+scraper = cloudscraper.create_scraper()
 
 def get_latest_news():
-    buildId = get_json_build_id()
-    if not buildId:
-        print("Не удалось найти buildId")
-        return None, None
-
-    url = f"{BASE}/_next/data/{buildId}/ru-ru/country/by/vac/byMSQ2it/news.json"
-    r = requests.get(url, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-
-    # В структуре Next.js JSON новости обычно в data.pageProps или похожем
-    # Нам нужно добраться до списка новостей
+    print("Открываем страницу...")
     try:
-        items = data["pageProps"]["news"]
-    except KeyError:
-        print("Не удалось найти новости в JSON")
-        return None, None
-
-    if not items:
-        return None, None
-
-    first = items[0]
-    title = first.get("title")
-    link = BASE + first.get("path")
-
-    return title, link
-
-def load_last():
-    try:
-        with open(LAST_FILE, "r") as f:
-            return f.read().strip()
-    except:
-        return None
-
-def save_last(link):
-    with open(LAST_FILE, "w") as f:
-        f.write(link)
-
-def send_telegram(msg):
-    if not TOKEN or not CHAT_ID:
-        return
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=10
-        )
+        r = scraper.get(NEWS_URL, timeout=15)
+        r.raise_for_status()
     except Exception as e:
-        print("Telegram error:", e)
+        print("Ошибка при получении страницы:", e)
+        return None, None
+
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    # Находим все новости
+    articles = soup.find_all("article")
+    if not articles:
+        print("Не найден article")
+        return None, None
+
+    # Берем самую свежую новость
+    latest = articles[0]
+
+    # Получаем заголовок
+    title_tag = latest.find(["h2", "h3"])
+    if title_tag:
+        title = title_tag.get_text(strip=True)
+    else:
+        title = "Без заголовка"
+
+    # Получаем ссылку, если есть
+    link_tag = latest.find("a")
+    if link_tag and link_tag.get("href"):
+        link = link_tag["href"]
+        if not link.startswith("http"):
+            link = "https://visas-it.tlscontact.com" + link
+    else:
+        link = NEWS_URL  # fallback
+
+    # Можно использовать текст заголовка как уникальный ID
+    news_id = title
+
+    return news_id, title, link
+
+def read_last_id():
+    if os.path.exists(LAST_ID_FILE):
+        with open(LAST_ID_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
+def save_last_id(news_id):
+    with open(LAST_ID_FILE, "w", encoding="utf-8") as f:
+        f.write(news_id)
 
 def main():
-    title, link = get_latest_news()
-    if not link:
-        print("No news found")
+    news_id, title, link = get_latest_news()
+    if not news_id:
+        print("Нет данных")
         return
 
-    last = load_last()
-    print("Current:", link)
-    print("Last:", last)
-
-    if link != last:
-        print("New!")
-        send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
-        save_last(link)
+    last_id = read_last_id()
+    if news_id != last_id:
+        print("Найдена новая новость!")
+        print("Заголовок:", title)
+        print("Ссылка:", link)
+        save_last_id(news_id)
     else:
-        print("No change")
+        print("Новых новостей нет.")
+        print("Текущая:", news_id)
+        print("Старая:", last_id)
 
 if __name__ == "__main__":
     main()
