@@ -62,7 +62,7 @@ def get_latest_news():
 
             if "Cloudflare" in html_snippet or "Attention Required" in html_snippet:
                 print("Обнаружен Cloudflare блок — вероятно 403/challenge")
-                        print("Контейнер #news-list-wrapper найден")
+                print("Контейнер #news-list-wrapper найден")
             
             # Берём все <a> внутри этого контейнера, которые ведут на /news/...
             news_links = page.query_selector_all('#news-list-wrapper a[href*="/news/"]')
