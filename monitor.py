@@ -1,4 +1,4 @@
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 import os
 
@@ -9,23 +9,25 @@ TELEGRAM_CHAT_ID = os.environ["CHAT_ID"]
 
 
 def get_latest_news():
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    scraper = cloudscraper.create_scraper()
 
-    r = requests.get(URL, headers=headers, timeout=10)
+    r = scraper.get(URL, timeout=15)
+
+    # 🔥 защита от Cloudflare страницы
+    if "You are unable to access" in r.text:
+        print("Cloudflare блокирует запрос")
+        return None, None
+
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # 🔥 самый стабильный вариант
     first_news = soup.select_one("h2")
 
     if not first_news:
+        print("Не нашли новости")
         return None, None
 
     title = " ".join(first_news.get_text().split())
 
-
-    # ссылка "Read more"
     read_more = first_news.find_next("a")
     link = read_more["href"] if read_more else URL
 
@@ -36,6 +38,7 @@ def get_latest_news():
 
 
 def send_telegram(text):
+    import requests
     requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
         data={"chat_id": TELEGRAM_CHAT_ID, "text": text}
@@ -59,14 +62,14 @@ def main():
     title, link = get_latest_news()
     last = load_last()
 
-    print("Текущая новость:", title)
-    print("Старая новость:", last)
+    print("Текущая:", title)
+    print("Старая:", last)
 
     if title and title != last:
         send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
         save_last(title)
     else:
-        print("Новых новостей нет")
+        print("Нет изменений")
 
 
 if __name__ == "__main__":
