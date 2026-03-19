@@ -5,12 +5,17 @@ on:
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -32,11 +37,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
           git add last_news.txt
-          git diff --quiet && echo "no changes" || (
-            git commit -m "update last news"
-            git push
-          )
-permissions:
-  contents: write
 
-        
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "update last news"
+            git pull --rebase
+            git push
+          fi
