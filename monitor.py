@@ -30,31 +30,30 @@ def get_latest_news():
             print("Открываем страницу...")
             page.goto(URL, wait_until="domcontentloaded", timeout=60000)
 
-            # ждём рендер
-            page.wait_for_timeout(10000)
+            # 🔥 ЖДЁМ РЕАЛЬНЫЙ КОНТЕНТ (а не div)
+            try:
+                page.wait_for_selector('h2[data-testid="title"]', timeout=60000)
+                print("Контент появился")
+            except:
+                print("Контент не появился, пробуем ждать ещё")
+                page.wait_for_timeout(10000)
 
             html = page.content()
             browser.close()
 
+        from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
 
-        # 🔥 БЕРЕМ САМУЮ ПЕРВУЮ НОВОСТЬ
-        first_article = soup.select_one("article")
+        titles = soup.select('h2[data-testid="title"]')
+        links = soup.select('a[href*="/news/"]')
 
-        if not first_article:
-            print("Не найден article")
+        if not titles or not links:
+            print("Не нашли новости")
             return None, None
 
-        title_el = first_article.select_one('h2[data-testid="title"]')
-        link_el = first_article.select_one('a[href*="/news/"]')
+        title = titles[0].get_text(strip=True)
 
-        if not title_el or not link_el:
-            print("Не нашли title или link")
-            return None, None
-
-        title = title_el.get_text(strip=True)
-
-        href = link_el.get("href")
+        href = links[0].get("href")
         link = "https://visas-it.tlscontact.com" + href if href.startswith("/") else href
 
         return title, link
