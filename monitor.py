@@ -30,29 +30,31 @@ def get_latest_news():
             print("Открываем страницу...")
             page.goto(URL, wait_until="domcontentloaded", timeout=60000)
 
-            # просто ждём рендер
+            # ждём рендер
             page.wait_for_timeout(10000)
 
             html = page.content()
             browser.close()
 
-        # 👉 ПАРСИМ HTML (НЕ через Playwright)
         soup = BeautifulSoup(html, "html.parser")
 
-        container = soup.select_one("#news-list-wrapper")
-        if not container:
-            print("Контейнер не найден")
+        # 🔥 БЕРЕМ САМУЮ ПЕРВУЮ НОВОСТЬ
+        first_article = soup.select_one("article")
+
+        if not first_article:
+            print("Не найден article")
             return None, None
 
-        first = container.select_one('a[href*="/news/"]')
-        if not first:
-            print("Новость не найдена")
+        title_el = first_article.select_one('h2[data-testid="title"]')
+        link_el = first_article.select_one('a[href*="/news/"]')
+
+        if not title_el or not link_el:
+            print("Не нашли title или link")
             return None, None
 
-        title_el = first.select_one('h2[data-testid="title"]')
-        title = title_el.get_text(strip=True) if title_el else first.get_text(strip=True)
+        title = title_el.get_text(strip=True)
 
-        href = first.get("href")
+        href = link_el.get("href")
         link = "https://visas-it.tlscontact.com" + href if href.startswith("/") else href
 
         return title, link
@@ -60,6 +62,7 @@ def get_latest_news():
     except Exception as e:
         print("Ошибка:", e)
         return None, None
+
 
 
 def send_telegram(text):
