@@ -17,8 +17,9 @@ def get_latest_api_news():
         data = r.json()
 
         item = data["data"][0]
+
         news_id = str(item.get("id"))
-        title = item.get("title", "Без названия")
+        title = item.get("title")
         link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
         return news_id, title, link
@@ -31,16 +32,14 @@ def get_latest_api_news():
 # ---------- SITE ----------
 def get_latest_site_news():
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
 
         r = requests.get(SITE_URL, headers=headers, timeout=15)
         r.raise_for_status()
 
         soup = BeautifulSoup(r.text, "html.parser")
 
-        first = soup.select_one('#news-list-wrapper article a[href*="/news/"]')
+        first = soup.select_one('#news-list-wrapper a[href*="/news/"]')
 
         if not first:
             print("Не нашли новость на сайте")
@@ -94,14 +93,29 @@ def main():
     print("API:", api_id, "| старое:", last_api)
     print("SITE:", site_id, "| старое:", last_site)
 
-    # 🔥 1. РАННИЙ ИНСАЙД (API)
+    # 🔥 1. РАННИЙ СИГНАЛ (даже без title)
     if api_id and api_id != last_api:
-        send_telegram(f"⚡ Новая новость (ранний доступ):\n{title}\n{link}")
+        if title:
+            text = f"⚡ Новая новость (ранний доступ):\n{title}\n{link}"
+        else:
+            text = f"⚠️ Обнаружена новая новость (ещё без заголовка)\n{link}"
+
+        send_telegram(text)
         save("last_api.txt", api_id)
 
-    # 🌐 2. ПОЯВИЛАСЬ НА САЙТЕ
+    # 🔁 2. ОБНОВЛЕНИЕ: появился title (важно!)
+    if api_id and title:
+        last_title = load("last_title.txt")
+
+        if title != last_title:
+            send_telegram(f"✏️ Новость обновилась:\n{title}\n{link}")
+            save("last_title.txt", title)
+
+    # 🌐 3. ПОЯВИЛАСЬ НА САЙТЕ
     if site_id and site_id != last_site:
-        send_telegram(f"🌐 Новость появилась на сайте:\nhttps://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{site_id}")
+        send_telegram(
+            f"🌐 Новость появилась на сайте:\nhttps://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{site_id}"
+        )
         save("last_site.txt", site_id)
 
 
