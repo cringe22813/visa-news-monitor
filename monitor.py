@@ -2,7 +2,6 @@ import os
 import json
 import time
 import cloudscraper
-from bs4 import BeautifulSoup
 
 # ---------------- CONFIG ----------------
 API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5"
@@ -12,8 +11,9 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 STATE_FILE = "state.json"
 
-scraper = cloudscraper.create_scraper()
-
+scraper = cloudscraper.create_scraper(
+    browser={"browser": "chrome", "platform": "windows", "mobile": False}
+)
 
 # ---------------- API ----------------
 def get_latest_news():
@@ -21,83 +21,32 @@ def get_latest_news():
         r = scraper.get(API_URL, timeout=15)
         r.raise_for_status()
         data = r.json()
-
-        items = data.get("data", [])
-        result = []
-
-        for item in items:
-            news_id = str(item.get("id"))
-            title = item.get("title") or "Без названия"
-            link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
-
-            result.append({
-                "id": news_id,
-                "title": title,
-                "link": link
-            })
-
-        return result
-
+        return data.get("data", [])
     except Exception as e:
         print("❌ API error:", e)
         return []
 
+# ---------------- READY CHECK ----------------
+def is_ready(item):
+    title = (item.get("title") or "").strip()
+    content = (item.get("content") or "").strip()
 
-# ---------------- CHECK STATUS ----------------
-def check_news_status(url):
-    try:
-        r = scraper.get(url, timeout=15)
+    # 1. Контент есть — почти точно опубликовано
+    if len(content) > 120:
+        return True
 
-        if r.status_code == 403:
-            print("🚫 403 (Cloudflare)")
-            return "blocked"
+    # 2. Есть заголовок + хоть какой-то контент
+    if title and title != "Без названия" and len(content) > 50:
+        return True
 
-        if r.status_code != 200:
-            print(f"⚠️ Status {r.status_code}")
-            return "blocked"
+    # 3. fallback: если запись обновлялась после создания
+    created = item.get("date_created")
+    updated = item.get("date_updated")
 
-        soup = BeautifulSoup(r.text, "html.parser")
+    if created and updated and created != updated and len(content) > 30:
+        return True
 
-        title = soup.select_one('[data-testid="title"]')
-        content = soup.select_one('[data-testid="content"]')
-
-        if not title or not content:
-            return "not_ready"
-
-        text = content.get_text(strip=True)
-
-        # пустая новость
-        if len(text) < 120:
-            return "not_ready"
-
-        # защита от заглушек
-        bad_phrases = ["loading", "please wait", "error"]
-        lower = text.lower()
-
-        if any(p in lower for p in bad_phrases):
-            return "not_ready"
-
-        return "ready"
-
-    except Exception as e:
-        print("❌ Check error:", e)
-        return "blocked"
-
-
-# ---------------- RETRY ----------------
-def check_with_retry(url, attempts=3):
-    for i in range(attempts):
-        status = check_news_status(url)
-
-        if status != "blocked":
-            return status
-
-        print(f"🔁 retry {i+1}")
-        time.sleep(3)
-
-    # ❗ ВАЖНО: НЕ пропускаем новость
-    return "not_ready"
-
+    return False
 
 # ---------------- TELEGRAM ----------------
 def send_telegram(text):
@@ -123,7 +72,6 @@ def send_telegram(text):
     except Exception as e:
         print("❌ Telegram error:", e)
 
-
 # ---------------- STATE ----------------
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -135,11 +83,9 @@ def load_state():
     except:
         return {}
 
-
 def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
-
 
 # ---------------- MAIN ----------------
 def main():
@@ -152,35 +98,39 @@ def main():
 
     state = load_state()
 
-    for news in news_list:
-        news_id = news["id"]
-        title = news["title"]
-        link = news["link"]
+    for item in news_list:
+        news_id = str(item.get("id"))
 
-        print(f"\n🔍 {news_id} | {title}")
+        title = (item.get("title") or "Без названия").strip()
+        link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
         current_state = state.get(news_id, "new")
 
-        status_check = check_with_retry(link)
+        print(f"\n🔍 {news_id} | {title} | state={current_state}")
 
-        print("state:", current_state, "| check:", status_check)
+        # уже обработано — не трогаем
+        if current_state == "ready":
+            continue
 
-        # 🔥 РАННИЙ ДОСТУП
+        # проверяем готовность через API
+        ready = is_ready(item)
+
+        print("ready:", ready)
+
+        # 👀 впервые увидели — просто запоминаем
         if current_state == "new":
-            send_telegram(f"⚡ Ранний доступ:\n{title}\n{link}")
-            state[news_id] = "early"
+            state[news_id] = "seen"
+            continue
 
-        # ✅ ГОТОВАЯ НОВОСТЬ (даже если был 403 раньше — поймает)
-        if status_check == "ready" and current_state != "ready":
+        # ✅ ГОТОВАЯ НОВОСТЬ
+        if ready and current_state != "ready":
             send_telegram(f"✅ Новость опубликована:\n{title}\n{link}")
             state[news_id] = "ready"
 
-        # анти-спам
-        time.sleep(2)
+        time.sleep(1)
 
     save_state(state)
     print("=== DONE ===")
-
 
 if __name__ == "__main__":
     main()
