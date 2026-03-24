@@ -2,7 +2,7 @@ name: Visa News Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *" 
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -30,18 +30,17 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor.py
-       
-        
 
-      - name: Commit if changed
+      - name: Commit state
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions@github.com"
 
           git pull --rebase origin main || true
 
-          git add last_news.txt
+          git add state.json
+
           git diff --cached --quiet && echo "No changes" && exit 0
 
-          git commit -m "Update last news [ci skip]"
+          git commit -m "Update state [ci skip]"
           git push origin main
