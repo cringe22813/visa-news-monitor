@@ -1,80 +1,96 @@
 import requests
-import os
+import time
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+BOT_TOKEN = "YOUR_TOKEN"
+CHAT_ID = "YOUR_CHAT_ID"
 
-API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=1"
+API_URL = "https://cms.tlscontact.com/items/news/{}"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
+}
 
-def get_latest_news():
+TARGET_TENANT = "visa-it"
+TARGET_TAG = "byMSQ2it"
+
+def get_news(news_id):
     try:
-        print("Запрашиваем API...")
-
-        r = requests.get(API_URL, timeout=15)
-        r.raise_for_status()
-
-        data = r.json()
-
-        if "data" not in data or not data["data"]:
-            print("Нет данных в API")
-            return None, None, None
-
-        item = data["data"][0]
-
-        title = item.get("title", "Без названия")
-        news_id = str(item.get("id"))
-        link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
-
-        return news_id, title, link
-
-    except Exception as e:
-        print("Ошибка API:", e)
-        return None, None, None
-
-
-def send_telegram(text):
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
-            timeout=10
-        )
-    except Exception as e:
-        print("Ошибка Telegram:", e)
-
-
-def load_last():
-    try:
-        with open("last_news.txt", "r") as f:
-            return f.read().strip()
+        r = requests.get(API_URL.format(news_id), headers=HEADERS, timeout=10)
+        if r.status_code != 200:
+            return None
+        return r.json().get("data")
     except:
         return None
 
 
-def save_last(news_id):
-    with open("last_news.txt", "w") as f:
-        f.write(news_id)
+def is_valid_news(data):
+    if not data:
+        return False
+
+    # 🔑 ФИЛЬТР №1 — tenant
+    tenant = data.get("tenant", {}).get("id")
+    if tenant != TARGET_TENANT:
+        return False
+
+    # 🔑 ФИЛЬТР №2 — tag (самое важное)
+    tags = data.get("tags", [])
+    if TARGET_TAG not in tags:
+        return False
+
+    # 🔑 ФИЛЬТР №3 — есть русский перевод
+    translations = data.get("translations", [])
+    ru = next((t for t in translations if t["languages_code"] == "ru-ru"), None)
+    if not ru:
+        return False
+
+    # 🔑 ФИЛЬТР №4 — есть текст
+    if not ru.get("description"):
+        return False
+
+    return True
+
+
+def parse_news(data):
+    translations = data["translations"]
+    ru = next(t for t in translations if t["languages_code"] == "ru-ru")
+
+    title = ru.get("title") or "Без названия"
+    text = ru.get("description") or ""
+
+    return title, text
+
+
+def send_tg(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, json={
+        "chat_id": CHAT_ID,
+        "text": text[:4000],
+        "parse_mode": "HTML"
+    })
 
 
 def main():
-    news_id, title, link = get_latest_news()
+    print("=== START ===")
 
-    last = load_last()
+    for news_id in range(1825, 1800, -1):
+        data = get_news(news_id)
 
-    print("Текущая:", news_id)
-    print("Старая:", last)
+        print(f"\n🔍 {news_id}")
 
-    if not news_id:
-        print("Нет данных")
-        return
+        if not is_valid_news(data):
+            print("skip ❌")
+            continue
 
-    if news_id != last:
-        print("🔥 Новая новость!")
-        send_telegram(f"🆕 Новая новость:\n{title}\n{link}")
-        save_last(news_id)
-    else:
-        print("Нет изменений")
+        title, text = parse_news(data)
+
+        print("VALID ✅", title)
+
+        send_tg(f"⚡ {title}\n\n{text}")
+
+        time.sleep(1)
+
+    print("=== DONE ===")
 
 
 if __name__ == "__main__":
