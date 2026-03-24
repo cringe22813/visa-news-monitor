@@ -141,38 +141,51 @@ def main():
 
     for item in news_list:
         news_id = str(item.get("id"))
-
-        print(f"Проверяем {news_id}")
-
+    
+        tenant = item.get("tenant", {}).get("name", "")
+        tags = item.get("tags", [])
+    
+        print("\n====================")
+        print(f"ID: {news_id}")
+        print(f"Tenant: {tenant}")
+        print(f"Tags: {tags}")
+    
         # уже отправляли
         if news_id in sent_ids:
+            print("⏭ Уже отправляли")
             continue
-
-        # фильтр: только Италия
+    
+        # фильтр Италии
         if not is_italy(item):
-            print(f"⛔ {news_id} не Италия")
+            print("⛔ Не Италия")
             continue
-
+    
+        print("✅ Италия")
+    
         # проверка готовности
         if not is_ready(item):
-            print(f"⚠️ {news_id} ещё не готова")
+            print("⚠️ НЕ готова (нет нормального текста)")
             continue
-
+    
+        print("✅ Готова")
+    
         title, text = extract_text(item)
-
+    
+        print(f"📌 Заголовок: {title}")
+    
         link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
-
+    
         message = (
             f"🆕 Новая новость!\n\n"
             f"{title}\n\n"
             f"{text}...\n\n"
             f"{link}"
         )
-
-        print(f"🔥 Отправляем {news_id}")
-
+    
+        print("🔥 ОТПРАВКА В ТГ")
+    
         send_telegram(message)
-
+    
         sent_ids.add(news_id)
 
     state["sent_ids"] = list(sent_ids)[-20:]
