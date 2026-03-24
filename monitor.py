@@ -1,157 +1,163 @@
-import requests
-import time
-import json
 import os
+import json
+import cloudscraper
+from bs4 import BeautifulSoup
 
-BOT_TOKEN = "YOUR_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-API_URL = "https://cms.tlscontact.com/items/news/{}"
+API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json"
-}
-
-SEEN_FILE = "seen.json"
+STATE_FILE = "state.json"
 
 
-# =========================
-# utils
-# =========================
-
-def load_seen():
-    if not os.path.exists(SEEN_FILE):
-        return set()
-    with open(SEEN_FILE, "r") as f:
-        return set(json.load(f))
+# ==============================
+# HTTP (Cloudflare bypass)
+# ==============================
+scraper = cloudscraper.create_scraper()
 
 
-def save_seen(seen):
-    with open(SEEN_FILE, "w") as f:
-        json.dump(list(seen), f)
-
-
-# =========================
-# API
-# =========================
-
-def get_news(news_id):
+def fetch_news():
     try:
-        r = requests.get(API_URL.format(news_id), headers=HEADERS, timeout=10)
-        if r.status_code != 200:
-            return None
-        return r.json().get("data")
+        r = scraper.get(
+            API_URL,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        r.raise_for_status()
+        return r.json().get("data", [])
     except Exception as e:
-        print("ERROR:", e)
-        return None
+        print("Ошибка API:", e)
+        return []
 
 
-# =========================
-# filters
-# =========================
+# ==============================
+# Проверка готовности новости
+# ==============================
+def is_ready(item):
+    translations = item.get("translations", [])
 
-def has_valid_tag(tags):
-    # принимаем любые BY (by*, byMSQ2it и т.д.)
-    return any(tag.startswith("by") for tag in tags)
-
-
-def is_valid_news(data):
-    if not data:
+    if not translations:
         return False
 
-    # только Италия (твоя страница)
-    if data.get("tenant", {}).get("id") != "visa-it":
-        return False
+    for t in translations:
+        title = t.get("title")
+        description = t.get("description")
 
-    # только Беларусь
-    tags = data.get("tags", [])
-    if not has_valid_tag(tags):
-        return False
+        if title and description and len(description) > 50:
+            return True
 
-    # русский перевод обязателен
-    translations = data.get("translations", [])
-    ru = next((t for t in translations if t["languages_code"] == "ru-ru"), None)
-    if not ru:
-        return False
-
-    # должен быть текст
-    if not ru.get("description"):
-        return False
-
-    return True
+    return False
 
 
-# =========================
-# parse
-# =========================
+# ==============================
+# Извлечение текста
+# ==============================
+def extract_text(item):
+    translations = item.get("translations", [])
 
-def parse_news(data):
-    translations = data["translations"]
-    ru = next(t for t in translations if t["languages_code"] == "ru-ru")
+    # ищем русский
+    ru = None
+    for t in translations:
+        if t.get("languages_code") == "ru-ru":
+            ru = t
+            break
 
-    title = ru.get("title") or "Без названия"
-    text = ru.get("description") or ""
+    t = ru if ru else translations[0]
 
-    # немного чистим HTML (минимально)
-    text = text.replace("<p>", "").replace("</p>", "\n")
-    text = text.replace("<br>", "\n")
+    title = t.get("title", "Без названия")
+    description = t.get("description", "")
 
-    return title.strip(), text.strip()
+    clean = BeautifulSoup(description, "html.parser").get_text()
 
-
-# =========================
-# telegram
-# =========================
-
-def send_tg(text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    r = requests.post(url, json={
-        "chat_id": CHAT_ID,
-        "text": text[:4000],
-        "parse_mode": "HTML"
-    })
-
-    print("📨 TG:", r.status_code)
+    return title.strip(), clean.strip()[:400]
 
 
-# =========================
-# main
-# =========================
+# ==============================
+# Telegram
+# ==============================
+def send_telegram(text):
+    try:
+        scraper.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": text
+            },
+            timeout=15
+        )
+    except Exception as e:
+        print("Ошибка Telegram:", e)
 
+
+# ==============================
+# State (несколько ID)
+# ==============================
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {"sent_ids": []}
+
+    try:
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"sent_ids": []}
+
+
+def save_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+
+# ==============================
+# Основная логика
+# ==============================
 def main():
-    print("=== START ===")
+    state = load_state()
+    sent_ids = set(state.get("sent_ids", []))
 
-    seen = load_seen()
+    news_list = fetch_news()
 
-    for news_id in range(1830, 1800, -1):
-        print(f"\n🔍 {news_id}")
+    if not news_list:
+        print("Нет данных")
+        return
 
-        if news_id in seen:
-            print("already sent")
+    # обрабатываем от старых к новым (важно!)
+    news_list.reverse()
+
+    for item in news_list:
+        news_id = str(item.get("id"))
+
+        print(f"Проверяем {news_id}")
+
+        if news_id in sent_ids:
             continue
 
-        data = get_news(news_id)
-
-        if not is_valid_news(data):
-            print("skip ❌")
+        if not is_ready(item):
+            print(f"⚠️ {news_id} ещё не готова")
             continue
 
-        title, text = parse_news(data)
+        # готовая новость
+        title, text = extract_text(item)
 
-        print("VALID ✅", title)
+        link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
-        message = f"⚡ {title}\n\n{text}"
+        message = (
+            f"🆕 Новая новость!\n\n"
+            f"{title}\n\n"
+            f"{text}...\n\n"
+            f"{link}"
+        )
 
-        send_tg(message)
+        print(f"🔥 Отправляем {news_id}")
 
-        seen.add(news_id)
-        save_seen(seen)
+        send_telegram(message)
 
-        time.sleep(1)
+        sent_ids.add(news_id)
 
-    print("=== DONE ===")
+    # сохраняем только последние 20 (чтобы не рос файл)
+    state["sent_ids"] = list(sent_ids)[-20:]
+    save_state(state)
 
 
 if __name__ == "__main__":
