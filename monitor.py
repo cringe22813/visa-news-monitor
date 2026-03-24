@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5"
+API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5&fields=*.*"
 
 STATE_FILE = "state.json"
 
