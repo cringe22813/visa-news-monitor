@@ -4,7 +4,7 @@ import time
 import cloudscraper
 
 # ---------------- CONFIG ----------------
-API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5"
+API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5&fields=*.*"
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -30,20 +30,18 @@ def get_latest_news():
 def is_ready(item):
     title = (item.get("title") or "").strip()
     content = (item.get("content") or "").strip()
+    image = item.get("image")
 
-    # 1. Контент есть — почти точно опубликовано
-    if len(content) > 120:
+    # 🔥 1. Самый надежный сигнал — есть картинка
+    if image:
         return True
 
-    # 2. Есть заголовок + хоть какой-то контент
-    if title and title != "Без названия" and len(content) > 50:
+    # 2. Достаточно текста
+    if len(content) > 200:
         return True
 
-    # 3. fallback: если запись обновлялась после создания
-    created = item.get("date_created")
-    updated = item.get("date_updated")
-
-    if created and updated and created != updated and len(content) > 30:
+    # 3. Заголовок + немного текста
+    if title and title != "Без названия" and len(content) > 80:
         return True
 
     return False
@@ -102,27 +100,32 @@ def main():
         news_id = str(item.get("id"))
 
         title = (item.get("title") or "Без названия").strip()
+        content = (item.get("content") or "").strip()
+        image = item.get("image")
+
         link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
         current_state = state.get(news_id, "new")
 
         print(f"\n🔍 {news_id} | {title} | state={current_state}")
+        print("DEBUG:", {
+            "content_len": len(content),
+            "has_image": bool(image)
+        })
 
-        # уже обработано — не трогаем
+        # уже отправлено — пропускаем
         if current_state == "ready":
             continue
 
-        # проверяем готовность через API
         ready = is_ready(item)
-
         print("ready:", ready)
 
-        # 👀 впервые увидели — просто запоминаем
+        # 👀 первый раз увидели — просто запоминаем
         if current_state == "new":
             state[news_id] = "seen"
             continue
 
-        # ✅ ГОТОВАЯ НОВОСТЬ
+        # ✅ новость реально появилась
         if ready and current_state != "ready":
             send_telegram(f"✅ Новость опубликована:\n{title}\n{link}")
             state[news_id] = "ready"
@@ -131,6 +134,7 @@ def main():
 
     save_state(state)
     print("=== DONE ===")
+
 
 if __name__ == "__main__":
     main()
