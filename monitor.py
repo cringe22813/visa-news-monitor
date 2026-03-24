@@ -49,7 +49,7 @@ def check_news_status(url):
         r = scraper.get(url, timeout=15)
 
         if r.status_code == 403:
-            print("🚫 BLOCKED (403)")
+            print("🚫 403 (Cloudflare)")
             return "blocked"
 
         if r.status_code != 200:
@@ -66,7 +66,8 @@ def check_news_status(url):
 
         text = content.get_text(strip=True)
 
-        if len(text) < 100:
+        # пустая новость
+        if len(text) < 120:
             return "not_ready"
 
         # защита от заглушек
@@ -94,7 +95,8 @@ def check_with_retry(url, attempts=3):
         print(f"🔁 retry {i+1}")
         time.sleep(3)
 
-    return "blocked"
+    # ❗ ВАЖНО: НЕ пропускаем новость
+    return "not_ready"
 
 
 # ---------------- TELEGRAM ----------------
@@ -159,27 +161,19 @@ def main():
 
         current_state = state.get(news_id, "new")
 
-        # 🔥 ОДИН нормальный чек
         status_check = check_with_retry(link)
 
         print("state:", current_state, "| check:", status_check)
 
-        # 🚫 если не удалось проверить — пропускаем
-        if status_check == "blocked":
-            print("⏭ Skip (blocked)")
-            continue
+        # 🔥 РАННИЙ ДОСТУП
+        if current_state == "new":
+            send_telegram(f"⚡ Ранний доступ:\n{title}\n{link}")
+            state[news_id] = "early"
 
-        # ✅ ГОТОВАЯ
-        if status_check == "ready":
-            if current_state != "ready":
-                send_telegram(f"✅ Новость опубликована:\n{title}\n{link}")
-                state[news_id] = "ready"
-
-        # ⚡ РАННИЙ ДОСТУП
-        elif status_check == "not_ready":
-            if current_state == "new":
-                send_telegram(f"⚡ Ранний доступ:\n{title}\n{link}")
-                state[news_id] = "early"
+        # ✅ ГОТОВАЯ НОВОСТЬ (даже если был 403 раньше — поймает)
+        if status_check == "ready" and current_state != "ready":
+            send_telegram(f"✅ Новость опубликована:\n{title}\n{link}")
+            state[news_id] = "ready"
 
         # анти-спам
         time.sleep(2)
