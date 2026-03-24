@@ -6,7 +6,6 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=1"
-SITE_URL = "https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news"
 
 
 # ---------- API ----------
@@ -19,7 +18,7 @@ def get_latest_api_news():
         item = data["data"][0]
 
         news_id = str(item.get("id"))
-        title = item.get("title")
+        title = item.get("title") or "Без названия"
         link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
         return news_id, title, link
@@ -29,30 +28,39 @@ def get_latest_api_news():
         return None, None, None
 
 
-# ---------- SITE ----------
-def get_latest_site_news():
+# ---------- ПРОВЕРКА ГОТОВНОСТИ ----------
+def is_news_ready(news_id):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        url = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
-        r = requests.get(SITE_URL, headers=headers, timeout=15)
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
 
         soup = BeautifulSoup(r.text, "html.parser")
 
-        first = soup.select_one('#news-list-wrapper a[href*="/news/"]')
+        title = soup.select_one('[data-testid="title"]')
+        content = soup.select_one('[data-testid="content"]')
 
-        if not first:
-            print("Не нашли новость на сайте")
-            return None
+        if not title or not content:
+            print("Нет структуры новости")
+            return False
 
-        href = first.get("href")
-        news_id = href.split("/")[-1]
+        text = content.get_text(strip=True)
 
-        return news_id
+        if len(text) < 50:
+            print("Контент ещё пустой")
+            return False
+
+        print("Новость готова")
+        return True
 
     except Exception as e:
-        print("Ошибка SITE:", e)
-        return None
+        print("Ошибка проверки страницы:", e)
+        return False
 
 
 # ---------- TELEGRAM ----------
@@ -60,7 +68,11 @@ def send_telegram(text):
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            data={"chat_id": TELEGRAM_CHAT_ID, "text": text},
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": text,
+                "disable_web_page_preview": True
+            },
             timeout=10
         )
         print("TG:", r.text)
@@ -85,38 +97,27 @@ def save(name, value):
 # ---------- MAIN ----------
 def main():
     api_id, title, link = get_latest_api_news()
-    site_id = get_latest_site_news()
 
     last_api = load("last_api.txt")
-    last_site = load("last_site.txt")
+    ready_id = load("ready.txt")
 
     print("API:", api_id, "| старое:", last_api)
-    print("SITE:", site_id, "| старое:", last_site)
+    print("READY:", ready_id)
 
-    # 🔥 1. РАННИЙ СИГНАЛ (даже без title)
-    if api_id and api_id != last_api:
-        if title:
-            text = f"⚡ Новая новость (ранний доступ):\n{title}\n{link}"
-        else:
-            text = f"⚠️ Обнаружена новая новость (ещё без заголовка)\n{link}"
+    if not api_id:
+        print("Нет данных")
+        return
 
-        send_telegram(text)
+    # ⚡ 1. РАННИЙ ДОСТУП (API)
+    if api_id != last_api:
+        send_telegram(f"⚡ Новая новость (ранний доступ):\n{title}\n{link}")
         save("last_api.txt", api_id)
 
-    # 🔁 2. ОБНОВЛЕНИЕ: появился title (важно!)
-    if api_id and title:
-        last_title = load("last_title.txt")
-
-        if title != last_title:
-            send_telegram(f"✏️ Новость обновилась:\n{title}\n{link}")
-            save("last_title.txt", title)
-
-    # 🌐 3. ПОЯВИЛАСЬ НА САЙТЕ
-    if site_id and site_id != last_site:
-        send_telegram(
-            f"🌐 Новость появилась на сайте:\nhttps://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{site_id}"
-        )
-        save("last_site.txt", site_id)
+    # ✅ 2. ГОТОВАЯ НОВОСТЬ (контент появился)
+    if api_id != ready_id:
+        if is_news_ready(api_id):
+            send_telegram(f"✅ Новость полностью появилась:\n{title}\n{link}")
+            save("ready.txt", api_id)
 
 
 if __name__ == "__main__":
