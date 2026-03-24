@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=1"
+API_URL = "https://cache-cms.directuscloud.tlscontact.com/items/news?sort=-date_created&limit=5"
 
 
 # ---------- API ----------
@@ -15,17 +15,21 @@ def get_latest_api_news():
         r.raise_for_status()
         data = r.json()
 
-        item = data["data"][0]
+        items = data.get("data", [])
+        result = []
 
-        news_id = str(item.get("id"))
-        title = item.get("title") or "Без названия"
-        link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
+        for item in items:
+            news_id = str(item.get("id"))
+            title = item.get("title") or "Без названия"
+            link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
 
-        return news_id, title, link
+            result.append((news_id, title, link))
+
+        return result
 
     except Exception as e:
         print("Ошибка API:", e)
-        return None, None, None
+        return []
 
 
 # ---------- ПРОВЕРКА ГОТОВНОСТИ ----------
@@ -46,20 +50,17 @@ def is_news_ready(news_id):
         content = soup.select_one('[data-testid="content"]')
 
         if not title or not content:
-            print("Нет структуры новости")
             return False
 
         text = content.get_text(strip=True)
 
         if len(text) < 50:
-            print("Контент ещё пустой")
             return False
 
-        print("Новость готова")
         return True
 
     except Exception as e:
-        print("Ошибка проверки страницы:", e)
+        print(f"Ошибка проверки {news_id}:", e)
         return False
 
 
@@ -81,43 +82,47 @@ def send_telegram(text):
 
 
 # ---------- STORAGE ----------
-def load(name):
+def load_set(filename):
     try:
-        with open(name, "r") as f:
-            return f.read().strip()
+        with open(filename, "r") as f:
+            return set(f.read().splitlines())
     except:
-        return None
+        return set()
 
 
-def save(name, value):
-    with open(name, "w") as f:
-        f.write(value)
+def save_set(filename, data_set):
+    with open(filename, "w") as f:
+        for item in data_set:
+            f.write(item + "\n")
 
 
 # ---------- MAIN ----------
 def main():
-    api_id, title, link = get_latest_api_news()
+    news_list = get_latest_api_news()
 
-    last_api = load("last_api.txt")
-    ready_id = load("ready.txt")
+    sent_early = load_set("sent_early.txt")
+    sent_ready = load_set("sent_ready.txt")
 
-    print("API:", api_id, "| старое:", last_api)
-    print("READY:", ready_id)
+    print("EARLY:", sent_early)
+    print("READY:", sent_ready)
 
-    if not api_id:
-        print("Нет данных")
-        return
+    for news_id, title, link in news_list:
 
-    # ⚡ 1. РАННИЙ ДОСТУП (API)
-    if api_id != last_api:
-        send_telegram(f"⚡ Новая новость (ранний доступ):\n{title}\n{link}")
-        save("last_api.txt", api_id)
+        print(f"Проверяем {news_id}")
 
-    # ✅ 2. ГОТОВАЯ НОВОСТЬ (контент появился)
-    if api_id != ready_id:
-        if is_news_ready(api_id):
-            send_telegram(f"✅ Новость полностью появилась:\n{title}\n{link}")
-            save("ready.txt", api_id)
+        # ⚡ РАННИЙ ДОСТУП (только если НЕ готова)
+        if news_id not in sent_early:
+            if not is_news_ready(news_id):
+                send_telegram(f"⚡ Новая новость (ранний доступ):\n{title}\n{link}")
+                sent_early.add(news_id)
+                save_set("sent_early.txt", sent_early)
+
+        # ✅ ГОТОВАЯ НОВОСТЬ
+        if news_id not in sent_ready:
+            if is_news_ready(news_id):
+                send_telegram(f"✅ Новость полностью появилась:\n{title}\n{link}")
+                sent_ready.add(news_id)
+                save_set("sent_ready.txt", sent_ready)
 
 
 if __name__ == "__main__":
