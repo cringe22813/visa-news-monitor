@@ -43,14 +43,18 @@ def get_latest_news():
         return []
 
 
-# ---------------- READY CHECK ----------------
-def is_news_ready(url):
+# ---------------- CHECK STATUS ----------------
+def check_news_status(url):
     try:
         r = scraper.get(url, timeout=15)
 
+        if r.status_code == 403:
+            print("🚫 BLOCKED (403)")
+            return "blocked"
+
         if r.status_code != 200:
             print(f"⚠️ Status {r.status_code}")
-            return False
+            return "blocked"
 
         soup = BeautifulSoup(r.text, "html.parser")
 
@@ -58,26 +62,39 @@ def is_news_ready(url):
         content = soup.select_one('[data-testid="content"]')
 
         if not title or not content:
-            return False
+            return "not_ready"
 
         text = content.get_text(strip=True)
 
-        # защита от пустых шаблонов
         if len(text) < 100:
-            return False
+            return "not_ready"
 
-        # защита от "заглушек"
+        # защита от заглушек
         bad_phrases = ["loading", "please wait", "error"]
         lower = text.lower()
 
         if any(p in lower for p in bad_phrases):
-            return False
+            return "not_ready"
 
-        return True
+        return "ready"
 
     except Exception as e:
-        print("❌ Ready check error:", e)
-        return False
+        print("❌ Check error:", e)
+        return "blocked"
+
+
+# ---------------- RETRY ----------------
+def check_with_retry(url, attempts=3):
+    for i in range(attempts):
+        status = check_news_status(url)
+
+        if status != "blocked":
+            return status
+
+        print(f"🔁 retry {i+1}")
+        time.sleep(3)
+
+    return "blocked"
 
 
 # ---------------- TELEGRAM ----------------
@@ -140,27 +157,31 @@ def main():
 
         print(f"\n🔍 {news_id} | {title}")
 
-        # получаем состояние
-        status = state.get(news_id, "new")
+        current_state = state.get(news_id, "new")
 
-        # ОДИН вызов
-        ready = is_news_ready(link)
+        # 🔥 ОДИН нормальный чек
+        status_check = check_with_retry(link)
 
-        print("status:", status, "| ready:", ready)
+        print("state:", current_state, "| check:", status_check)
 
-        # -------- READY --------
-        if ready:
-            if status != "ready":
+        # 🚫 если не удалось проверить — пропускаем
+        if status_check == "blocked":
+            print("⏭ Skip (blocked)")
+            continue
+
+        # ✅ ГОТОВАЯ
+        if status_check == "ready":
+            if current_state != "ready":
                 send_telegram(f"✅ Новость опубликована:\n{title}\n{link}")
                 state[news_id] = "ready"
 
-        # -------- EARLY --------
-        else:
-            if status == "new":
+        # ⚡ РАННИЙ ДОСТУП
+        elif status_check == "not_ready":
+            if current_state == "new":
                 send_telegram(f"⚡ Ранний доступ:\n{title}\n{link}")
                 state[news_id] = "early"
 
-        # анти-спам пауза
+        # анти-спам
         time.sleep(2)
 
     save_state(state)
