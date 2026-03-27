@@ -2,6 +2,7 @@ import os
 import json
 import cloudscraper
 from bs4 import BeautifulSoup
+from datetime import datetime, timezone, timedelta
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -27,7 +28,7 @@ def fetch_news():
         r.raise_for_status()
         return r.json().get("data", [])
     except Exception as e:
-        print("Ошибка API:", e)
+        print("❌ Ошибка API:", e)
         return []
 
 
@@ -40,13 +41,42 @@ def is_italy(item):
 
 
 # ==============================
-# Проверка готовности
+# ФИЛЬТР: актуальность
+# ==============================
+def is_actual(item):
+    # --- publish_date ---
+    publish = item.get("publish_date")
+    if not publish:
+        return False
+
+    try:
+        pub_date = datetime.fromisoformat(publish)
+    except:
+        return False
+
+    # только последние 2 дня (можно 3)
+    if pub_date < datetime.now() - timedelta(days=2):
+        return False
+
+    # --- expiration_date ---
+    expiration = item.get("expiration_date")
+
+    if expiration:
+        try:
+            exp_date = datetime.fromisoformat(expiration.replace("Z", "+00:00"))
+            if exp_date < datetime.now(timezone.utc):
+                return False
+        except:
+            pass
+
+    return True
+
+
+# ==============================
+# ФИЛЬТР: готовность
 # ==============================
 def is_ready(item):
     translations = item.get("translations", [])
-
-    if not translations:
-        return False
 
     for t in translations:
         if not isinstance(t, dict):
@@ -72,12 +102,8 @@ def extract_text(item):
     if not valid:
         return "Без названия", ""
 
-    ru = None
-    for t in valid:
-        if t.get("languages_code") == "ru-ru":
-            ru = t
-            break
-
+    # приоритет RU
+    ru = next((t for t in valid if t.get("languages_code") == "ru-ru"), None)
     t = ru if ru else valid[0]
 
     title = t.get("title", "Без названия")
@@ -102,7 +128,7 @@ def send_telegram(text):
             timeout=15
         )
     except Exception as e:
-        print("Ошибка Telegram:", e)
+        print("❌ Ошибка Telegram:", e)
 
 
 # ==============================
@@ -134,60 +160,68 @@ def main():
     news_list = fetch_news()
 
     if not news_list:
-        print("Нет данных")
+        print("❌ Нет данных")
         return
 
-    news_list.reverse()  # от старых к новым
+    news_list.reverse()  # старые → новые
 
     for item in news_list:
         news_id = str(item.get("id"))
-    
+
         tenant = item.get("tenant", {}).get("name", "")
         tags = item.get("tags", [])
-    
+
         print("\n====================")
         print(f"ID: {news_id}")
         print(f"Tenant: {tenant}")
         print(f"Tags: {tags}")
-    
+
         # уже отправляли
         if news_id in sent_ids:
             print("⏭ Уже отправляли")
             continue
-    
+
         # фильтр Италии
         if not is_italy(item):
             print("⛔ Не Италия")
             continue
-    
+
         print("✅ Италия")
-    
+
+        # фильтр актуальности
+        if not is_actual(item):
+            print("⛔ СТАРАЯ / ПРОСРОЧЕННАЯ")
+            continue
+
+        print("✅ Актуальная")
+
         # проверка готовности
         if not is_ready(item):
-            print("⚠️ НЕ готова (нет нормального текста)")
+            print("⚠️ НЕ готова (пустая)")
             continue
-    
+
         print("✅ Готова")
-    
+
         title, text = extract_text(item)
-    
+
         print(f"📌 Заголовок: {title}")
-    
+
         link = f"https://visas-it.tlscontact.com/ru-ru/country/by/vac/byMSQ2it/news/{news_id}"
-    
+
         message = (
             f"🆕 Новая новость!\n\n"
             f"{title}\n\n"
             f"{text}...\n\n"
             f"{link}"
         )
-    
+
         print("🔥 ОТПРАВКА В ТГ")
-    
+
         send_telegram(message)
-    
+
         sent_ids.add(news_id)
 
+    # храним последние 20
     state["sent_ids"] = list(sent_ids)[-20:]
     save_state(state)
 
